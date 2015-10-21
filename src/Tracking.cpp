@@ -17,6 +17,8 @@
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/opencv.hpp"
 
+#include <armadillo>
+
 using namespace std;
 using namespace cv;
 
@@ -147,6 +149,7 @@ struct opt
 
 // help function
 // *********************meshgrid*********************
+/*
 static void meshgrid(const cv::Mat &xgv, const cv::Mat &ygv,
 	cv::Mat &X, cv::Mat &Y)
 {
@@ -162,7 +165,7 @@ static void meshgridTest(const cv::Range &xgv, const cv::Range &ygv,
 	for (int i = xgv.start; i <= xgv.end; i++) t_x.push_back(i);
 	for (int i = ygv.start; i <= ygv.end; i++) t_y.push_back(i);
 	meshgrid(cv::Mat(t_x), cv::Mat(t_y), X, Y);
-}
+}*/
 // *********************meshgrid*********************
 
 // ********************* cumsum *********************
@@ -190,7 +193,8 @@ Mat1d cumsum(Mat1d& src, int rc = 1)
 }
 // ********************* cumsum *********************
 // Sampler
-// PosSlidingWindowsSampler
+// PosSlidingWindowsSampler_opencv
+/*
 void PosSlidingWindowSampler(vector<double>& initTmpl, Mat1d& tmplpos)
 {
 	int slidingH = 5;
@@ -217,10 +221,67 @@ void PosSlidingWindowSampler(vector<double>& initTmpl, Mat1d& tmplpos)
 
 	tmplpos = Mat(initTmpl).t();
 	tmplpos.push_back(tmpl);
+}*/
+void meshgrid(arma::imat& wVec, arma::imat& hVec, arma::imat& wMat, arma::imat& hMat)
+{
+	wMat = arma::repmat(wVec, hVec.size(), 1);
+	hMat = arma::repmat(hVec.t(), 1, wVec.size());
 }
+void PosSlidingWindowSampler(arma::mat& initTmpl, arma::mat& tmplpos)
+{
+	int slidingH = 5;
+	int slidingW = 5;
 
+	vector<int> hVec, wVec;
+	for (int i = 0; i < slidingH + 1; ++i)
+		hVec.push_back(i - (int)round((double)slidingH / 2.0));
+	for (int i = 0; i < slidingW + 1; ++i)
+		wVec.push_back(i - (int)round((double)slidingW / 2.0));
+
+	arma::imat hvec(hVec), wvec(wVec);
+	hvec = hvec.t();
+	wvec = wvec.t();
+	arma::imat hMat, wMat;
+	int num = hVec.size() * wVec.size();
+	meshgrid(wvec, hvec, wMat, hMat);
+	tmplpos = arma::repmat(initTmpl, num, 1);
+	tmplpos.col(0) = tmplpos.col(0) + arma::reshape(wMat,num,1);
+	tmplpos.col(1) = tmplpos.col(1) + arma::reshape(hMat, num, 1);
+	tmplpos.insert_rows(0, initTmpl);
+}
+void NegSlidingWindowSampler(arma::mat& initTmpl, arma::mat& tmplneg)
+{
+	int slidingH = 100;
+	int slidingW = 100;
+	int stride = 5;
+	double ratio = 0.3;
+
+	vector<int> hVec, wVec;
+	for (int i = 0; i < slidingH + 1; i = i + stride)
+		hVec.push_back(i - (int)round((double)slidingH / 2.0));
+	for (int i = 0; i < slidingW + 1; i = i + stride)
+		wVec.push_back(i - (int)round((double)slidingW / 2.0));
+	arma::imat hvec(hVec), wvec(wVec);
+	hvec = hvec.t();
+	wvec = wvec.t();
+	arma::imat hMat, wMat;
+	int num = hVec.size() * wVec.size();
+	meshgrid(wvec, hvec, wMat, hMat);
+	tmplneg.zeros(num*initTmpl.n_rows, 4);
+	arma::mat idx;
+	idx.zeros(num*initTmpl.n_rows, 1);
+	arma::mat tempTmpl;
+	for (int i = 0; i < initTmpl.n_rows; ++i)
+	{
+		tempTmpl = repmat(initTmpl.row(i), num, 1);
+		tempTmpl.col(0) = tempTmpl.col(0) + arma::reshape(wMat, num, 1);
+		tempTmpl.col(1) = tempTmpl.col(1) + arma::reshape(hMat, num, 1);
+
+	}
+}
 // Motion
 // ParticleFilterMotionModel
+/*
 void ParticleFilterMotionModel(vector<double>& initTmpl, Mat1d& initConf, Mat1d& tmpl)
 {
 	double affsig_array[4] = { 6, 6, 0.01, 0.001 };
@@ -248,18 +309,65 @@ void ParticleFilterMotionModel(vector<double>& initTmpl, Mat1d& initConf, Mat1d&
 	else
 		N = initTmpl_mat.rows;
 		Mat1d cumconf = cumsum(initConf,1);
+		Mat1d rand(1,N);
+		randu(rand, 0, 1);
 
 
 
+		Mat1d minVal_;
+}*/
+void ParticleFilterMotionModel(arma::mat& initTmpl, arma::mat& initConf, arma::mat& tmpl)
+{
+	double affsig_array[4] = { 6, 6, 0.01, 0.001 };
+	vector <double> affsig_vec(affsig_array, affsig_array + 4);
+	int N = 400;
+	int szH = 32;
+	double condenssig = 0.05;
 
-	Mat1d minVal_
+	initConf = initConf - min(initConf);
+	initConf = arma::exp(initConf / condenssig).t();
+	arma::mat sum_initConf_mat = arma::sum(initConf);
+	double sum_initConf = sum_initConf_mat.at(0,0);
+	initConf = initConf / sum_initConf;
+	arma::uword index;
+	double max_value = initConf.min(index);
 
+	if (initTmpl.n_rows == 1)
+		tmpl = arma::repmat(initTmpl, N, 1);
+	else
+	{
+		N = initTmpl.n_rows;
+		arma::mat cumconf = arma::cumsum(initConf,0);
+		arma::mat rnd = arma::randu(1, N);
+		rnd = arma::repmat(rnd, N, 1);
+		cumconf = arma::repmat(cumconf, 1, N);
+		arma::umat compare = (rnd > cumconf);
+		compare = arma::sum(compare);
+		arma::umat idx = floor(compare) + 1;
+	}
 
+	tmpl.col(3) = tmpl.col(3) / tmpl.col(2);
+	tmpl.col(2) = tmpl.col(2) / szH;
+	arma::mat rnd2 = arma::randn(N, 4);
+	arma::mat valTmpl(affsig_vec);
+	valTmpl = valTmpl.t();
+	tmpl = tmpl + rnd2 % repmat(valTmpl, N, 1);
+	tmpl.col(2) = tmpl.col(2) * szH;
+	tmpl.col(3) = tmpl.col(2) % tmpl.col(3);
 
-
-
-
-
+	vector<unsigned> rndIdx_vec,colIdx_vec;
+	for (int i = 0; i < tmpl.n_rows; ++i)
+		rndIdx_vec.push_back(i);
+	for (int i = 0; i < tmpl.n_cols; ++i)
+		colIdx_vec.push_back(i);
+	arma::uvec rndIdx(rndIdx_vec);
+	arma::uvec colIdx(colIdx_vec);
+	rndIdx = arma::shuffle(rndIdx);
+	tmpl = tmpl(rndIdx,colIdx);
+	tmpl = tmpl.submat(0, 0, tmpl.n_rows - 2, tmpl.n_cols - 1);
+	tmpl.insert_rows(0, initTmpl);
+	tmpl = tmpl(find(tmpl.col(2) > 3),colIdx);
+	tmpl = tmpl(find(tmpl.col(3) > 3),colIdx);
 }
 
 void tracking(vector<string>& images_filenames, Rect& targetIni, bool saveImage = false)
@@ -272,21 +380,32 @@ void tracking(vector<string>& images_filenames, Rect& targetIni, bool saveImage 
 		         targetIni.width,
 		         targetIni.height };
 	vector<double> pvec(p, p + 4);
-	Mat1d tmplPos,tmplNeg;
-	PosSlidingWindowSampler(pvec,tmplPos);
+	arma::mat pvec_mat(pvec);
+	pvec_mat = pvec_mat.t();
+	arma::mat tmplPos, tmplNeg, tmpl,prob;
 
 	for (int i = 0; i < images_filenames.size(); ++i)
 	{
 		frame = imread(images_filenames[i], 1);
 		frame.convertTo(frame, CV_32FC3);
 
-		if (i != 1)
+		if (i != 0)
 		{
+			ParticleFilterMotionModel(tmpl, prob, tmpl);
 
 		}
 		else
 		{
+			arma::mat initConf;
+			initConf.ones(1, 1);
+			ParticleFilterMotionModel(pvec_mat, initConf, tmpl);
+			prob.ones(1, tmpl.n_rows);
+		}
 
+		if (i == 0)
+		{
+			PosSlidingWindowSampler(pvec_mat, tmplPos);
+			NegSlidingWindowSampler(pvec_mat, tmplNeg);
 		}
 
 	}
